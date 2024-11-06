@@ -1,0 +1,154 @@
+---
+title: "Plan 372 HW 4"
+author: "Claire Lyons"
+format: html
+editor: visual
+---
+
+## Homework 4
+
+```{r}
+library(tidyverse)
+library(tidycensus)
+library(sf)
+```
+
+```{r}
+# loading in flight data
+data = read_csv(here::here("airport_pairs.csv"),
+                col_types=c(origin_cbsa="character", dest_cbsa="character"))
+head(data)
+```
+
+## Question 1
+
+```{r}
+# filtering original dataset to only include RDU flights with > 10000 passengers
+rdu_flights = data |>
+  filter(origin == "RDU" | dest == "RDU") |>
+  filter(passengers > 10000)
+
+show(rdu_flights)
+```
+
+## Question 2
+
+```{r}
+# loading in census data.
+# in this copy, i labeled population as origin population
+origin_census_data = get_acs(
+  geography = "cbsa",
+  variables = c(
+    "origin_population"="B01003_001"
+  ),
+  year=2021,
+  survey="acs5"
+)
+
+# in this copy, i labeled population as destination population
+dest_census_data = get_acs(
+  geography = "cbsa",
+  variables = c(
+    "dest_population"="B01003_001"
+  ),
+  year=2021,
+  survey="acs5"
+)
+
+# joining together the original flight data with the census data by joining the geographic identification variables
+origin_joined_data = left_join(data, origin_census_data, by = c("origin_cbsa"= "GEOID"))
+
+# joining this new joined data with the destination census data so that the origin and destination cbsa are reflected in the table
+total_joined_data = left_join(origin_joined_data, dest_census_data, by=c("dest_cbsa"="GEOID"))
+head(total_joined_data)
+```
+
+```{r}
+# creating a summary table that shows the total number of passengers taking flights from one origin cbsa to a destination cbsa
+
+airport_volumes = total_joined_data |>
+  group_by(origin_cbsa, dest_cbsa) |> # grouped data by CBSA pairs
+  summarize("volume"=sum(passengers)) # adding up total passengers on these flights
+
+head(airport_volumes)
+```
+
+```{r}
+# creating a scatterplot that depicts origin population vs. total passengers 
+ggplot(total_joined_data, aes(x=estimate.x, y=passengers)) +
+  geom_point() +
+  labs(
+    title = "Origin Population vs. Total Passengers",
+    x = "Origin Population",
+    y= "Total Passengers"
+  )
+```
+
+```{r}
+# scatterplot showing destination population vs. total passengers
+
+ggplot(total_joined_data, aes(x=estimate.y, y=passengers)) +
+  geom_point() +
+  labs(
+    title = "Destination Population vs. Total Passengers",
+    x = "Destination Population",
+    y= "Total Passengers"
+  )
+
+```
+
+```{r}
+# scatterplot showing flight distance vs. total passengers
+
+ggplot(total_joined_data, aes(x=distancemiles, y=passengers)) +
+  geom_point() +
+  labs(
+    title = "Flight Distance vs. Total Passengers",
+    x = "Flight Distance",
+    y= "Total Passengers"
+  )
+```
+
+## Question 3
+
+```{r}
+# creating a regression model, regressing passenger volume on origin population, destination population, and flight distance
+
+passenger_volume_regression = lm(passengers~estimate.x+estimate.y+distancemiles, total_joined_data)
+
+summary(passenger_volume_regression)
+```
+
+## Question 4
+
+```{r}
+# creating new tables with flight information for these prospective routes (both ways)
+
+rdu_flights = tribble(
+  ~origin, ~dest, ~estimate.x, ~estimate.y, ~distancemiles,
+  "RDU", "PDX", 1391801, 2493429, 2363,
+  "RDU", "ELP", 1391801, 863807, 1606,
+  "RDU", "TLH", 1391801, 382747, 496,
+  "RDU", "SMF", 1391801, 2379368, 2345
+)
+
+rdu_flights2 = tribble(
+  ~origin, ~dest, ~estimate.x, ~estimate.y, ~distancemiles,
+  "PDX", "RDU", 2493429, 1391801, 2363,
+  "ELP", "RDU", 863807, 1391801, 1606,
+  "TLH", "RDU", 382747, 1391801, 496,
+  "SMF", "RDU", 2379368, 1391801, 2345
+)
+```
+
+```{r}
+# predicting demand for these prospective flight routes using the model from the previous question
+rdu_flights$forecast_demand = predict(passenger_volume_regression, rdu_flights)
+rdu_flights
+```
+
+```{r}
+# predicting demand as I did for the other flight routes
+rdu_flights2$forecast_demand = predict(passenger_volume_regression, rdu_flights2)
+rdu_flights2
+```
